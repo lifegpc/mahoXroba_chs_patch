@@ -1,4 +1,4 @@
-#include <Windows.h>
+﻿#include <Windows.h>
 #include "proxy.h"
 #include "vfs.hpp"
 #include "wchar_util.h"
@@ -28,14 +28,14 @@ HFONT WINAPI HookedCreateFontA(int nHeight, int nWidth, int nEscapement, int nOr
 }
 
 HFONT WINAPI HookedCreateFontW(int nHeight, int nWidth, int nEscapement, int nOrientation, int fnWeight, DWORD dwItalic, DWORD dwUnderline, DWORD dwStrikeOut, DWORD dwCharSet, DWORD dwOutPrecision, DWORD dwClipPrecision, DWORD dwQuality, DWORD dwPitchAndFamily, LPCWSTR lpFaceName) {
-	return TrueCreateFontW(nHeight, nWidth, nEscapement, nOrientation, fnWeight, dwItalic, dwUnderline, dwStrikeOut, GB2312_CHARSET, dwOutPrecision, dwClipPrecision, dwQuality, dwPitchAndFamily, L"ＭＳ ゴシック");
+    return TrueCreateFontW(nHeight, nWidth, nEscapement, nOrientation, fnWeight, dwItalic, dwUnderline, dwStrikeOut, GB2312_CHARSET, dwOutPrecision, dwClipPrecision, dwQuality, dwPitchAndFamily, L"ＭＳ ゴシック");
 }
 
 HFONT WINAPI HookedCreateFontIndirectW(CONST LOGFONTW* lplf) {
     LOGFONTW p;
-	memcpy(&p, lplf, sizeof(LOGFONTW));
-	wcscpy(p.lfFaceName, L"ＭＳ ゴシック");
-	return TrueCreateFontIndirectW(&p);
+    memcpy(&p, lplf, sizeof(LOGFONTW));
+    wcscpy(p.lfFaceName, L"ＭＳ ゴシック");
+    return TrueCreateFontIndirectW(&p);
 }
 
 HANDLE WINAPI HookedCreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile) {
@@ -114,19 +114,19 @@ BOOL WINAPI HookedGetFileAttributesExW(LPCWSTR lpFileName, GET_FILEEX_INFO_LEVEL
 }
 
 int WINAPI HookedMessageBoxW(HWND hWnd, LPCWSTR lpText, LPCWSTR lpCaption, UINT uType) {
-	if (wcscmp(lpText, L"Crack By 阿皇仔") == 0) {
-		return 0;
-	}
-	return TrueMessageBoxW(hWnd, lpText, lpCaption, uType);
+    if (wcscmp(lpText, L"Crack By 阿皇仔") == 0) {
+        return 0;
+    }
+    return TrueMessageBoxW(hWnd, lpText, lpCaption, uType);
 }
 
 void Attach() {
-    vfs.AddArchiveWithErrorMsg("mahoXroba-chs.dat");
+    vfs.AddArchiveWithErrorMsg("mahoXroba-chs.dat", true);
     DetourTransactionBegin();
     DetourUpdateThread(GetCurrentThread());
-	DetourAttach(&TrueCreateFontA, HookedCreateFontA);
-	DetourAttach(&TrueCreateFontW, HookedCreateFontW);
-	DetourAttach(&TrueCreateFontIndirectW, HookedCreateFontIndirectW);
+    DetourAttach(&TrueCreateFontA, HookedCreateFontA);
+    DetourAttach(&TrueCreateFontW, HookedCreateFontW);
+    DetourAttach(&TrueCreateFontIndirectW, HookedCreateFontIndirectW);
     DetourAttach(&TrueCreateFileW, HookedCreateFileW);
     DetourAttach(&TrueReadFile, HookedReadFile);
     DetourAttach(&TrueCloseHandle, HookedCloseHandle);
@@ -137,16 +137,16 @@ void Attach() {
     DetourAttach(&TrueGetFileType, HookedGetFileType);
     DetourAttach(&TrueGetFileAttributesW, HookedGetFileAttributesW);
     DetourAttach(&TrueGetFileAttributesExW, HookedGetFileAttributesExW);
-	DetourAttach(&TrueMessageBoxW, HookedMessageBoxW);
+    DetourAttach(&TrueMessageBoxW, HookedMessageBoxW);
     DetourTransactionCommit();
 }
 
 void Detach() {
     DetourTransactionBegin();
     DetourUpdateThread(GetCurrentThread());
-	DetourDetach(&TrueCreateFontA, HookedCreateFontA);
-	DetourDetach(&TrueCreateFontW, HookedCreateFontW);
-	DetourDetach(&TrueCreateFontIndirectW, HookedCreateFontIndirectW);
+    DetourDetach(&TrueCreateFontA, HookedCreateFontA);
+    DetourDetach(&TrueCreateFontW, HookedCreateFontW);
+    DetourDetach(&TrueCreateFontIndirectW, HookedCreateFontIndirectW);
     DetourDetach(&TrueCreateFileW, HookedCreateFileW);
     DetourDetach(&TrueReadFile, HookedReadFile);
     DetourDetach(&TrueCloseHandle, HookedCloseHandle);
@@ -157,7 +157,7 @@ void Detach() {
     DetourDetach(&TrueGetFileType, HookedGetFileType);
     DetourDetach(&TrueGetFileAttributesW, HookedGetFileAttributesW);
     DetourDetach(&TrueGetFileAttributesExW, HookedGetFileAttributesExW);
-	DetourDetach(&TrueMessageBoxW, HookedMessageBoxW);
+    DetourDetach(&TrueMessageBoxW, HookedMessageBoxW);
     DetourTransactionCommit();
 }
 

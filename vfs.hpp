@@ -2,6 +2,7 @@
 #include <list>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <Windows.h>
 #include "str_util.h"
 
@@ -30,10 +31,10 @@ class VFS {
     public:
         VFS();
         ~VFS();
-        bool AddArchive(std::string path);
-        bool AddArchiveFromResource(HMODULE hModule, int resourceID);
-        void AddArchiveWithErrorMsg(std::string path);
-        void AddArchiveFromResourceWithErrorMsg(HMODULE hModule, int resourceID);
+        bool AddArchive(std::string path, bool inMem = false);
+        bool AddArchiveFromResource(HMODULE hModule, int resourceID, bool inMem = false);
+        void AddArchiveWithErrorMsg(std::string path, bool inMem = false);
+        void AddArchiveFromResourceWithErrorMsg(HMODULE hModule, int resourceID, bool inMem = false);
         bool ContainsFile(std::string path);
         bool ContainsFile(std::wstring path);
         bool ContainsHandle(HANDLE hFile);
@@ -48,7 +49,11 @@ class VFS {
         std::unordered_map<std::string, zip_stat_t, CaseInsensitiveHash, CaseInsensitiveEqual> files;
         std::string GetBasePath();
     private:
+        bool IsInMemArchive(zip_t* archive);
+        bool IsInMemHandle(HANDLE hFile);
         std::string base_path;
         std::list<zip_t*> archives;
+        std::unordered_set<zip_t*> inMemArchives;
         std::unordered_map<HANDLE, std::string> handles;
+        std::unordered_map<HANDLE, std::string> inMemHandles;
 };

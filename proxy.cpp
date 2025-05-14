@@ -10,15 +10,18 @@ void Proxy::Init(HMODULE hProxy)
         MessageBoxW(nullptr, L"Cannot load original d3d9.dll library", L"Proxy", MB_ICONERROR);
         ExitProcess(0);
     }
-
+#ifdef _MSVC_VER
 #define RESOLVE(fn) Original##fn = GetProcAddress(OriginalModuleHandle, #fn)
+#else
+#define RESOLVE(fn) Original##fn = (void*)GetProcAddress(OriginalModuleHandle, #fn)
+#endif
     RESOLVE(Direct3DCreate9);
 #undef RESOLVE
 }
 
-#ifdef _WIN64
+#if defined(_WIN64) || !defined(_MSVC_VER)
 // 64位平台使用函数指针调用
-void FakeDirect3DCreate9()                            { ((void(*)())Proxy::OriginalDirect3DCreate9)(); }
+extern "C" void FakeDirect3DCreate9()                            { ((void(*)())Proxy::OriginalDirect3DCreate9)(); }
 #else
 // 32位平台使用原有的内联汇编
 __declspec(naked) void FakeDirect3DCreate9()                            { __asm { jmp [Proxy::OriginalDirect3DCreate9] } }

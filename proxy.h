@@ -1,6 +1,6 @@
 #pragma once
 #include <windows.h>
-#include <ctffunc.h>
+//#include <ctffunc.h>
 #include <d2d1.h>
 #include <d2d1_3.h>
 #include <d3d11.h>

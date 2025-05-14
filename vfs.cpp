@@ -1,9 +1,10 @@
-#include "vfs.hpp"
+﻿#include "vfs.hpp"
 #include "wchar_util.h"
 #include "str_util.h"
 #include "fileop.h"
 #include "shlwapi.h"
 #include "time_util.h"
+#include "memfile.h"
 
 DWORD mapZipError(zip_file_t* file) {
     auto error = zip_file_get_error(file);
@@ -55,7 +56,7 @@ VFS::~VFS() {
     }
 }
 
-bool VFS::AddArchive(std::string path) {
+bool VFS::AddArchive(std::string path, bool inMem) {
     zip_t* archive = zip_open(path.c_str(), ZIP_RDONLY, nullptr);
     if (!archive) return false;
     archives.push_front(archive);
@@ -72,10 +73,13 @@ bool VFS::AddArchive(std::string path) {
         name = str_util::str_replace(name, "/", "\\");
         files[name] = st;
     }
+    if (inMem) {
+        inMemArchives.insert(archive);
+    }
     return true;
 }
 
-bool VFS::AddArchiveFromResource(HMODULE hModule, int resourceID) {
+bool VFS::AddArchiveFromResource(HMODULE hModule, int resourceID, bool inMem) {
     HRSRC hResInfo = FindResource(hModule, MAKEINTRESOURCE(resourceID), RT_RCDATA);
     if (!hResInfo) return false;
     HGLOBAL hResData = LoadResource(hModule, hResInfo);
@@ -104,11 +108,14 @@ bool VFS::AddArchiveFromResource(HMODULE hModule, int resourceID) {
         name = str_util::str_replace(name, "/", "\\");
         files[name] = st;
     }
+    if (inMem) {
+        inMemArchives.insert(archive);
+    }
     return true;
 }
 
-void VFS::AddArchiveWithErrorMsg(std::string path) {
-    if (!AddArchive(path)) {
+void VFS::AddArchiveWithErrorMsg(std::string path, bool inMem) {
+    if (!AddArchive(path, inMem)) {
         std::wstring wpath;
         if (!wchar_util::str_to_wstr(wpath, path, CP_UTF8)) {
             MessageBoxW(NULL, L"无法打开资源文件。请检查资源文件是否完整", L"错误", MB_ICONERROR);
@@ -122,8 +129,8 @@ void VFS::AddArchiveWithErrorMsg(std::string path) {
     }
 }
 
-void VFS::AddArchiveFromResourceWithErrorMsg(HMODULE hModule, int resourceID) {
-    if (!AddArchiveFromResource(hModule, resourceID)) {
+void VFS::AddArchiveFromResourceWithErrorMsg(HMODULE hModule, int resourceID, bool inMem) {
+    if (!AddArchiveFromResource(hModule, resourceID, inMem)) {
         MessageBoxW(NULL, L"无法打开内置的资源文件。", L"错误", MB_ICONERROR);
         ExitProcess(1);
         return;
@@ -147,7 +154,7 @@ bool VFS::ContainsFile(std::wstring path) {
 }
 
 bool VFS::ContainsHandle(HANDLE hFile) {
-    return handles.find(hFile) != handles.end();
+    return handles.find(hFile) != handles.end() || IsInMemHandle(hFile);
 }
 
 HANDLE VFS::CreateFileW(std::wstring path) {
@@ -179,7 +186,27 @@ HANDLE VFS::CreateFileW(std::wstring path) {
     }
     index = zip_name_locate(archive, str.c_str(), 0);
     zip_file_t* file = zip_fopen_index(archive, index, 0);
-    handles[(HANDLE)file] = str;
+    if (IsInMemArchive(archive)) {
+        auto& stat = (*c).second;
+        auto size = stat.size;
+        char* mem = new char[size];
+        zip_int64_t n = zip_fread(file, mem, size);
+        if (n == -1) {
+            SetLastError(mapZipError(file));
+            zip_fclose(file);
+            return INVALID_HANDLE_VALUE;
+        }
+        zip_fclose(file);
+        auto memfile = new_memfile(mem, size);
+        delete[] mem;
+        if (!memfile) {
+            SetLastError(ERROR_OUTOFMEMORY);
+            return INVALID_HANDLE_VALUE;
+        }
+        inMemHandles[(HANDLE)memfile] = str;
+    } else {
+        handles[(HANDLE)file] = str;
+    }
     return (HANDLE)file;
 }
 
@@ -188,11 +215,23 @@ bool VFS::ReadFile(HANDLE hFile, LPVOID lpBuffer, DWORD nNumberOfBytesToRead, LP
         SetLastError(ERROR_INVALID_HANDLE);
         return false;
     }
-    zip_file_t* file = (zip_file_t*)hFile;
-    if (!file) {
-        SetLastError(ERROR_INVALID_HANDLE);
-        return false;
+    if (IsInMemHandle(hFile)) {
+        MemFile* file = (MemFile*)hFile;
+        auto readed = memfile_read(file, (char*)lpBuffer, nNumberOfBytesToRead);
+        if (readed == 0) {
+            SetLastError(ERROR_HANDLE_EOF);
+            return false;
+        }
+        if (readed == -1) {
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return false;
+        }
+        if (lpNumberOfBytesRead) {
+            *lpNumberOfBytesRead = readed;
+        }
+        return true;
     }
+    zip_file_t* file = (zip_file_t*)hFile;
     zip_int64_t n = zip_fread(file, lpBuffer, nNumberOfBytesToRead);
     if (n == -1) {
         SetLastError(mapZipError(file));
@@ -209,6 +248,12 @@ void VFS::CloseHandle(HANDLE hFile) {
         SetLastError(ERROR_INVALID_HANDLE);
         return;
     }
+    if (IsInMemHandle(hFile)) {
+        MemFile* file = (MemFile*)hFile;
+        free_memfile(file);
+        inMemHandles.erase(hFile);
+        return;
+    }
     zip_fclose((zip_file_t*)hFile);
     handles.erase(hFile);
 }
@@ -216,8 +261,11 @@ void VFS::CloseHandle(HANDLE hFile) {
 DWORD VFS::GetFileSize(HANDLE hFile, LPDWORD lpFileSizeHigh) {
     auto f = handles.find(hFile);
     if (f == handles.end()) {
-        SetLastError(ERROR_INVALID_HANDLE);
-        return INVALID_FILE_SIZE;
+        f = inMemHandles.find(hFile);
+        if (f == inMemHandles.end()) {
+            SetLastError(ERROR_INVALID_HANDLE);
+            return INVALID_FILE_SIZE;
+        }
     }
     auto data = *f;
     auto name = data.second;
@@ -231,8 +279,11 @@ DWORD VFS::GetFileSize(HANDLE hFile, LPDWORD lpFileSizeHigh) {
 BOOL VFS::GetFileSizeEx(HANDLE hFile, PLARGE_INTEGER lpFileSize) {
     auto f = handles.find(hFile);
     if (f == handles.end()) {
-        SetLastError(ERROR_INVALID_HANDLE);
-        return FALSE;
+        f = inMemHandles.find(hFile);
+        if (f == inMemHandles.end()) {
+            SetLastError(ERROR_INVALID_HANDLE);
+            return FALSE;
+        }
     }
     auto data = *f;
     auto name = data.second;
@@ -245,6 +296,31 @@ DWORD VFS::SetFilePointer(HANDLE hFile, LONG lDistanceToMove, PLONG lpDistanceTo
     if (!ContainsHandle(hFile)) {
         SetLastError(ERROR_INVALID_HANDLE);
         return INVALID_SET_FILE_POINTER;
+    }
+    if (IsInMemHandle(hFile)) {
+        MemFile* file = (MemFile*)hFile;
+        if (!file) {
+            SetLastError(ERROR_INVALID_HANDLE);
+            return INVALID_SET_FILE_POINTER;
+        }
+        int64_t offset = lDistanceToMove;
+        if (lpDistanceToMoveHigh) {
+            offset |= ((int64_t)*lpDistanceToMoveHigh) << 32;
+        }
+        int code = memfile_seek(file, offset, dwMoveMethod);
+        if (code == -1) {
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return INVALID_SET_FILE_POINTER;
+        }
+        int64_t n = memfile_tell(file);
+        if (n == -1) {
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return INVALID_SET_FILE_POINTER;
+        }
+        if (lpDistanceToMoveHigh) {
+            *lpDistanceToMoveHigh = n >> 32;
+        }
+        return n;
     }
     zip_file_t* file = (zip_file_t*)hFile;
     if (!file) {
@@ -275,6 +351,28 @@ BOOL VFS::SetFilePointerEx(HANDLE hFile, LARGE_INTEGER liDistanceToMove, PLARGE_
     if (!ContainsHandle(hFile)) {
         SetLastError(ERROR_INVALID_HANDLE);
         return FALSE;
+    }
+    if (IsInMemHandle(hFile)) {
+        MemFile* file = (MemFile*)hFile;
+        if (!file) {
+            SetLastError(ERROR_INVALID_HANDLE);
+            return FALSE;
+        }
+        zip_int64_t offset = liDistanceToMove.QuadPart;
+        int code = memfile_seek(file, offset, dwMoveMethod);
+        if (code == -1) {
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return FALSE;
+        }
+        zip_int64_t n = memfile_tell(file);
+        if (n == -1) {
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return FALSE;
+        }
+        if (lpNewFilePointer) {
+            lpNewFilePointer->QuadPart = n;
+        }
+        return TRUE;
     }
     zip_file_t* file = (zip_file_t*)hFile;
     if (!file) {
@@ -334,4 +432,12 @@ BOOL VFS::GetFileAttributesExW(LPCWSTR lpFileName, GET_FILEEX_INFO_LEVELS fInfoL
         return TRUE;
     }
     return FALSE;
+}
+
+bool VFS::IsInMemArchive(zip_t* archive) {
+    return inMemArchives.find(archive) != inMemArchives.end();
+}
+
+bool VFS::IsInMemHandle(HANDLE hFile) {
+    return inMemHandles.find(hFile) != inMemHandles.end();
 }
