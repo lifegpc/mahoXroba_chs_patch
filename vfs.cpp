@@ -204,6 +204,7 @@ HANDLE VFS::CreateFileW(std::wstring path) {
             return INVALID_HANDLE_VALUE;
         }
         inMemHandles[(HANDLE)memfile] = str;
+        return (HANDLE)memfile;
     } else {
         handles[(HANDLE)file] = str;
     }
