@@ -34,7 +34,11 @@ HFONT WINAPI HookedCreateFontW(int nHeight, int nWidth, int nEscapement, int nOr
 HFONT WINAPI HookedCreateFontIndirectW(CONST LOGFONTW* lplf) {
     LOGFONTW p;
     memcpy(&p, lplf, sizeof(LOGFONTW));
-    wcscpy(p.lfFaceName, L"ＭＳ ゴシック");
+    if (p.lfFaceName) {
+        if (!wcscmp(p.lfFaceName, L"VL ゴシック")) {
+            wcscpy(p.lfFaceName, L"ＭＳ ゴシック");
+        }
+    }
     return TrueCreateFontIndirectW(&p);
 }
 

@@ -1,4 +1,4 @@
-#include "proxy.h"
+﻿#include "proxy.h"
 
 void Proxy::Init(HMODULE hProxy)
 {
@@ -7,8 +7,14 @@ void Proxy::Init(HMODULE hProxy)
     OriginalModuleHandle = LoadLibraryW(L"d3d9-2.dll");
     if (OriginalModuleHandle == nullptr)
     {
-        MessageBoxW(nullptr, L"Cannot load original d3d9.dll library", L"Proxy", MB_ICONERROR);
-        ExitProcess(0);
+        wchar_t realDllPath[MAX_PATH];
+        GetSystemDirectoryW(realDllPath, MAX_PATH);
+        wcscat_s(realDllPath, L"\\d3d9.dll");
+        OriginalModuleHandle = LoadLibraryW(realDllPath);
+        if (!OriginalModuleHandle) {
+            MessageBoxW(nullptr, L"Cannot load original d3d9.dll library", L"Proxy", MB_ICONERROR);
+            ExitProcess(0);
+        }
     }
 #ifdef _MSVC_VER
 #define RESOLVE(fn) Original##fn = GetProcAddress(OriginalModuleHandle, #fn)
